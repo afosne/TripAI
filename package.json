@@ -1,0 +1,17 @@
+{
+  "name": "aitu",
+  "type": "module",
+  "scripts": {
+    "dev": "cd frontend && npm run build && cd .. && wrangler dev",
+    "build": "cd frontend && npm run build",
+    "deploy": "cd frontend && npm run build && cd .. && wrangler deploy --minify",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "dependencies": {
+    "hono": "^4.12.14"
+  },
+  "devDependencies": {
+    "wrangler": "^4.4.0",
+    "@types/node": "^25.5.0"
+  }
+}

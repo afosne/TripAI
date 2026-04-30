@@ -1,0 +1,81 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "aitu",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-04-24",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"nodejs_als"
+	],
+	"assets": {
+		"directory": "./frontend/dist",
+		"binding": "ASSETS"
+	},
+	"vars": {
+
+		"AMAP_API_KEY": "",// 高德 web api 密钥
+		"AMAP_JS_KEY": "", // 高德 JS API Key（Web端），需在高德开放平台单独申请
+		"AMAP_JSCODE": "", // 高德 JS API 安全密钥
+
+		"AI_GATEWAY_ACCOUNT_ID": "", // Cloudflare Account ID，填写后启用 AI Gateway 重试
+		"AI_GATEWAY_ID": "", // AI Gateway 名称
+		"AI_GATEWAY_TOKEN": "", // Cloudflare API Token（需要 AI Gateway 权限）
+		"AI_FALLBACK_MODEL": "", // AI Gateway
+
+//		"AI_API_KEY": "",
+//		"AI_BASE_URL": "",
+//		"AI_MODEL": "",
+
+//		备用图片搜索引擎 防止出现没有图片的情况
+		"UNSPLASH_ACCESS_KEY": ""
+	},
+	"queues": {
+		"producers": [
+			{
+				"binding": "AI_QUEUE",
+				"queue": "ai-processing"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "ai-processing",
+				"max_batch_size": 50,
+				"max_batch_timeout": 2,
+				"max_retries": 2,
+				"retry_delay": 30,
+				"max_concurrency": 2
+			}
+		]
+	},
+	"kv_namespaces": [
+		{
+			"binding": "CACHE",
+			"id": ""
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "trip",
+			"database_id": ""
+		}
+	],
+	"triggers": {
+		"crons": ["0 3 * * *"]
+	},
+	"observability": {
+		"enabled": false,
+		"head_sampling_rate": 1,
+		"logs": {
+			"enabled": true,
+			"head_sampling_rate": 1,
+			"persist": true,
+			"invocation_logs": true
+		},
+		"traces": {
+			"enabled": false,
+			"persist": true,
+			"head_sampling_rate": 1
+		}
+	}
+}
