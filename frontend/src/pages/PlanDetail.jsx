@@ -680,6 +680,14 @@ function PlanDetail() {
     )
   }
 
+  if (plan.status === 'pending') {
+    return (
+      <div className="container" style={{ paddingTop: '8rem' }}>
+        <div className="msg msg-error">行程正在生成中，请稍后再试</div>
+      </div>
+    )
+  }
+
   const city = (() => { try { return JSON.parse(plan.params).destination || plan.city } catch { return plan.city } })()
   const planParams = (() => { try { return JSON.parse(plan.params) } catch { return {} } })()
   const startDate = planParams.start_date || plan.start_date

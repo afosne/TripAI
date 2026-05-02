@@ -558,6 +558,7 @@ function Plan() {
       clearGenState()
     } else {
       setSaving(true)
+      let saveOk = false
       try {
         const headers = { 'Content-Type': 'application/json', ...(editToken ? { 'X-Edit-Token': editToken } : {}) }
         const saveRes = await fetch(`/api/plans/${id}`, {
@@ -570,11 +571,14 @@ function Plan() {
             title: itinerary.title && /^\[.+]/.test(itinerary.title) ? itinerary.title : undefined,
           }),
         })
-        if (!saveRes.ok) {
+        if (saveRes.ok) {
+          saveOk = true
+        } else {
+          // Version conflict — get fresh version and retry
           const freshRes = await fetch(`/api/plans/${id}`)
           if (freshRes.ok) {
             const freshPlan = await freshRes.json()
-            await fetch(`/api/plans/${id}`, {
+            const retryRes = await fetch(`/api/plans/${id}`, {
               method: 'PUT',
               headers,
               body: JSON.stringify({
@@ -584,14 +588,20 @@ function Plan() {
                 title: itinerary.title && /^\[.+]/.test(itinerary.title) ? itinerary.title : undefined,
               }),
             })
+            saveOk = retryRes.ok
           }
         }
       } catch (err) {
         console.error('保存行程失败:', err)
       }
       setSaving(false)
-      setGeneratingDone(true)
-      clearGenState()
+      if (saveOk) {
+        setGeneratingDone(true)
+        clearGenState()
+      } else {
+        setError('行程生成成功但保存失败，请重试')
+        clearGenState()
+      }
     }
   }
 
