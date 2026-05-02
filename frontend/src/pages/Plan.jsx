@@ -722,6 +722,12 @@ function Plan() {
                       </div>
                     )}
 
+                    {isActive && result && (
+                      <div className="step-body step-body-waiting" style={{ borderTop: 'none', paddingTop: 0, paddingBottom: '0.5rem' }}>
+                        {step.waiting}
+                      </div>
+                    )}
+
                     {stepError && !result && (
                       <div className="step-error-body">
                         {stepError}（已跳过，继续后续步骤）
