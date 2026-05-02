@@ -12,6 +12,7 @@
 		"binding": "ASSETS"
 	},
 	"vars": {
+      	"AI_MODE": "queue", // 默认使用 stream 模式
 
 		"AMAP_API_KEY": "",// 高德 web api 密钥
 		"AMAP_JS_KEY": "", // 高德 JS API Key（Web端），需在高德开放平台单独申请

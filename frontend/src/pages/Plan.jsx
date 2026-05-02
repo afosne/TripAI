@@ -239,6 +239,25 @@ function Plan() {
       let currentEvent = ''
       let fullText = ''
       let doneReceived = false
+      let lastRenderLen = 0
+
+      const tryProgressiveRender = () => {
+        if (fullText.length - lastRenderLen < 80) return
+        lastRenderLen = fullText.length
+        const partial = parseStreamJSON(fullText, step.key)
+        let progressResult
+        if (step.key === 'attractions' || step.key === 'food') {
+          progressResult = partial.items || []
+          if (!progressResult.length) return
+        } else if (step.key === 'generate') {
+          progressResult = (partial.days || partial.title) ? partial : null
+          if (!progressResult) return
+        } else {
+          progressResult = (partial && Object.keys(partial).length > 0) ? partial : null
+          if (!progressResult) return
+        }
+        setStepResults(prev => ({ ...prev, [step.key]: progressResult }))
+      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -256,6 +275,7 @@ function Plan() {
 
             if (currentEvent === 'delta') {
               fullText += dataStr
+              tryProgressiveRender()
             } else if (currentEvent === 'done') {
               doneReceived = true
               const json = parseStreamJSON(fullText, step.key)
@@ -280,7 +300,9 @@ function Plan() {
     }
 
     // Execute a single step with retries
-    const executeStep = async (step, stepIndex) => {
+    // critical=true: failure is fatal (generate step)
+    // critical=false: failure is tolerated, step is skipped
+    const executeStep = async (step, stepIndex, { critical = false } = {}) => {
 
       if (step.key === 'generate') {
         const ctxSummary = {
@@ -321,7 +343,7 @@ function Plan() {
             const contentType = response.headers.get('content-type') || ''
             let result
             if (contentType.includes('application/json')) {
-              // 队列模式：POST 返回 requestId，轮询拿结果
+              // 队列模式：POST 返回 requestId，轮询拿结果（一次性渲染）
               const { requestId } = await response.json()
               const aiResult = await pollAIResult(requestId)
               const json = parseStreamJSON(aiResult.content, step.key)
@@ -334,7 +356,7 @@ function Plan() {
                 result = (json && Object.keys(json).length > 0) ? json : {}
               }
             } else {
-              // 流式模式：读取 SSE
+              // 流式模式：读取 SSE（边获取边渲染）
               result = await readSSE(response, step)
             }
             console.log(`[executeStep] ${step.key}: 完成, data=${Array.isArray(result) ? `array[${result.length}]` : Object.keys(result).join(',')}`)
@@ -366,37 +388,103 @@ function Plan() {
           } else {
             console.error(`步骤 ${step.key} 重试${MAX_RETRIES}次后仍然失败`)
             setStepErrors(prev => ({ ...prev, [step.key]: err.message }))
-            try {
-              await fetch(`/api/plans/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', ...(editToken ? { 'X-Edit-Token': editToken } : {}) },
-                body: JSON.stringify({
-                  itinerary: { status: 'failed', error: `${step.title}失败（已重试${MAX_RETRIES}次）：${err.message}` },
-                  version: 1,
-                }),
-              })
-            } catch { /* ignore */ }
-            setError(`行程生成失败：${step.title}失败（已重试${MAX_RETRIES}次）`)
-            clearGenState()
-            throw err
+            if (critical) {
+              try {
+                await fetch(`/api/plans/${id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', ...(editToken ? { 'X-Edit-Token': editToken } : {}) },
+                  body: JSON.stringify({
+                    itinerary: { status: 'failed', error: `${step.title}失败（已重试${MAX_RETRIES}次）：${err.message}` },
+                    version: 1,
+                  }),
+                })
+              } catch { /* ignore */ }
+              setError(`行程生成失败：${step.title}失败（已重试${MAX_RETRIES}次）`)
+              clearGenState()
+              throw err
+            }
+            // Non-critical: mark error and continue to next step
           }
         }
       }
     }
 
-    // Step 1: weather (sequential)
+    // Step 1: weather
     setCurrentStep(0)
     await executeStep(STEPS[0], 0)
 
     // Transition animation between weather and explore
     setShowTransition(true)
 
-    // Step 2: explore, attractions, food in parallel
+    // Steps 2-4: 并行发起请求，按顺序读取 SSE 渲染
     const parallelSteps = STEPS.slice(1, 4)
-    const parallelResults = await Promise.allSettled(
-      parallelSteps.map((step, idx) => executeStep(step, idx + 1))
-    )
-    if (parallelResults.some(r => r.status === 'rejected')) return
+    const parallelFetches = parallelSteps.map(step => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 900000)
+      return fetch(stepUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: step.key,
+          params: planParams,
+          context: context,
+          planId: id,
+          editToken: editToken,
+        }),
+        signal: controller.signal,
+      }).then(res => { clearTimeout(timeout); return { step, res } })
+        .catch(err => { clearTimeout(timeout); return { step, err } })
+    })
+    const parallelResponses = await Promise.all(parallelFetches)
+
+    // 按顺序读取响应：explore → attractions → food
+    for (let i = 0; i < parallelResponses.length; i++) {
+      const { step, res, err: fetchErr } = parallelResponses[i]
+      setCurrentStep(i + 1)
+      let succeeded = false
+
+      if (!fetchErr && res.ok) {
+        try {
+          const contentType = res.headers.get('content-type') || ''
+          let result
+          if (contentType.includes('application/json')) {
+            // 队列模式：轮询拿结果（一次性渲染）
+            const { requestId } = await res.json()
+            const aiResult = await pollAIResult(requestId)
+            const json = parseStreamJSON(aiResult.content, step.key)
+            if (step.key === 'attractions' || step.key === 'food') {
+              result = json.items || []
+            } else {
+              result = (json && Object.keys(json).length > 0) ? json : {}
+            }
+          } else {
+            // 流式模式：边获取边渲染
+            result = await readSSE(res, step)
+          }
+          console.log(`[parallel-sequential] ${step.key}: 完成, data=${Array.isArray(result) ? `array[${result.length}]` : Object.keys(result).join(',')}`)
+          context[step.key] = result
+          setStepResults(prev => ({ ...prev, [step.key]: result }))
+          succeeded = true
+        } catch (err) {
+          console.error(`步骤 ${step.key} 处理失败:`, err.message)
+        }
+      } else if (fetchErr) {
+        console.error(`步骤 ${step.key} 请求失败:`, fetchErr.message)
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        console.error(`步骤 ${step.key} 返回错误:`, errData.error?.message)
+      }
+
+      // 首次失败时重试（单独发请求，含重试逻辑）
+      if (!succeeded) {
+        try {
+          await executeStep(step, i + 1)
+        } catch {
+          // 重试也失败，标记错误跳过
+          setStepErrors(prev => ({ ...prev, [step.key]: `${step.title}失败` }))
+        }
+      }
+    }
 
     // 检查 explore 结果是否包含拒绝提示（非地球/非旅行目的地）
     if (context.explore?.overview?.includes('不在本服务支持范围') || context.explore?.overview?.includes('仅支持地球')) {
@@ -415,9 +503,9 @@ function Plan() {
       return
     }
 
-    // Step 3: generate (after all parallel steps complete)
+    // Step 5: generate (critical, fatal on failure)
     setCurrentStep(4)
-    await executeStep(STEPS[4], 4)
+    await executeStep(STEPS[4], 4, { critical: true })
 
     const itinerary = context.generate
     // Validate generate result with detailed diagnostics
