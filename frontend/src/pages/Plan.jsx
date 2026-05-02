@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
-import { useParams, useLocation, useNavigate } from 'react-router-dom'
-import { getDateDisplay } from '../utils/holidays'
-import { isCoord, resolveLocation } from '../utils/location'
-import { groupByTimePeriod, getDayDate } from '../utils/plan'
+import {useEffect, useRef, useState} from 'react'
+import {useLocation, useNavigate, useParams} from 'react-router-dom'
+import {getDateDisplay} from '../utils/holidays'
+import {isCoord, resolveLocation} from '../utils/location'
+import {getDayDate, groupByTimePeriod} from '../utils/plan'
 
 function toLocation(val) {
   const text = (typeof val === 'string' ? val : '').trim()
@@ -30,7 +30,13 @@ function Plan() {
   const [resolvedCity, setResolvedCity] = useState('')
   const [resolvedLocations, setResolvedLocations] = useState({})
 
-  const resolvedParams = params || (() => { try { const p = typeof plan?.params === 'string' ? JSON.parse(plan.params) : plan?.params; return p } catch { return null } })()
+  const resolvedParams = params || (() => {
+    try {
+      return typeof plan?.params === 'string' ? JSON.parse(plan.params) : plan?.params
+    } catch {
+      return null
+    }
+  })()
   const startDate = resolvedParams?.start_date || plan?.start_date
 
   const [error, setError] = useState(null)
@@ -110,8 +116,7 @@ function Plan() {
       // 优先用 location.state 传过来的 params，否则从 plan 数据中解析
       const planParams = params || (() => {
         try {
-          const p = typeof data?.params === 'string' ? JSON.parse(data.params) : data?.params
-          return p
+          return typeof data?.params === 'string' ? JSON.parse(data.params) : data?.params
         } catch { return null }
       })()
       if (data && data.status === 'pending' && planParams && !isGenerating.current) {
@@ -205,8 +210,8 @@ function Plan() {
     let patched = trimmed
     let openBrackets = 0, openBraces = 0, inS = false, es = false
     for (let i = 0; i < patched.length; i++) {
-      const c = patched[i]; if (es) { es = false; continue }; if (c === '\\') { es = true; continue }
-      if (c === '"') { inS = !inS; continue }; if (inS) continue
+      const c = patched[i]; if (es) { es = false; continue } if (c === '\\') { es = true; continue }
+      if (c === '"') { inS = !inS; continue } if (inS) continue
       if (c === '[') openBrackets++; else if (c === ']') openBrackets--
       else if (c === '{') openBraces++; else if (c === '}') openBraces--
     }
@@ -215,8 +220,8 @@ function Plan() {
     // Recount after potential fix
     openBrackets = 0; openBraces = 0; inS = false; es = false
     for (let i = 0; i < patched.length; i++) {
-      const c = patched[i]; if (es) { es = false; continue }; if (c === '\\') { es = true; continue }
-      if (c === '"') { inS = !inS; continue }; if (inS) continue
+      const c = patched[i]; if (es) { es = false; continue } if (c === '\\') { es = true; continue }
+      if (c === '"') { inS = !inS; continue } if (inS) continue
       if (c === '[') openBrackets++; else if (c === ']') openBrackets--
       else if (c === '{') openBraces++; else if (c === '}') openBraces--
     }
